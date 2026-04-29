@@ -176,12 +176,20 @@ export default function MindMapPage() {
     });
   }, [edges, runLayout]);
 
+  // --- UPDATED: Global Collapse Function ---
   const onCollapseAll = useCallback(() => {
     setNodes((nds) => {
-      const updatedNodes = nds.map((n) => ({
-        ...n,
-        data: { ...n.data, isCollapsed: true },
-      }));
+      const updatedNodes = nds.map((n) => {
+        // The root node stays expanded (false) so Level 1 nodes remain visible.
+        // Every other node collapses (true), hiding Level 2 and beyond.
+        const isRoot = n.id === "root";
+
+        return {
+          ...n,
+          data: { ...n.data, isCollapsed: !isRoot },
+        };
+      });
+
       setTimeout(() => runLayout(updatedNodes, edges), 0);
       return updatedNodes;
     });
