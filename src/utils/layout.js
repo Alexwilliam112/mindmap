@@ -36,7 +36,6 @@ export const applyVisibility = (nodes, edges) => {
   };
 };
 
-// --- THE SUBTREE SEPARATOR ENGINE ---
 const applyCousinGaps = (
   dagreGraph,
   nodesInTree,
@@ -45,7 +44,6 @@ const applyCousinGaps = (
 ) => {
   if (nodesInTree.length <= 1) return;
 
-  // 1. Map current layout state
   const nodeMap = new Map(
     nodesInTree.map((n) => [
       n.id,
@@ -62,7 +60,6 @@ const applyCousinGaps = (
     }
   });
 
-  // 2. Breadth-First Search to organize nodes by topological level
   const levels = [];
   const rootNodes = nodesInTree
     .filter((n) => !parentMap.has(n.id))
@@ -78,11 +75,9 @@ const applyCousinGaps = (
     currentLevel = nextLevel;
   }
 
-  // 3. Top-Down Cousin Expansion
+  // Top-Down Cousin Expansion
   levels.forEach((levelNodeIds, levelIndex) => {
     if (levelIndex === 0) return;
-
-    // Sort nodes in this column visually top-to-bottom
     levelNodeIds.sort((a, b) => nodeMap.get(a)._tmpY - nodeMap.get(b)._tmpY);
 
     let accumulatedShift = 0;
@@ -90,12 +85,10 @@ const applyCousinGaps = (
       const prevId = levelNodeIds[i - 1];
       const currId = levelNodeIds[i];
 
-      // If they have different parents, trigger the cousin gap
       if (parentMap.get(prevId) !== parentMap.get(currId)) {
         accumulatedShift += cousinGap;
       }
 
-      // Shift this node and its entire downstream subtree
       if (accumulatedShift > 0) {
         const shiftDescendants = (nodeId) => {
           nodeMap.get(nodeId)._tmpY += accumulatedShift;
@@ -108,12 +101,11 @@ const applyCousinGaps = (
     }
   });
 
-  // 4. Bottom-Up Parent Re-centering
+  // Bottom-Up Parent Re-centering
   for (let i = levels.length - 2; i >= 0; i--) {
     levels[i].forEach((nodeId) => {
       const childrenIds = childrenMap.get(nodeId);
       if (childrenIds.length > 0) {
-        // Find the absolute top and bottom child to find the true mathematical center
         const minChildY = Math.min(
           ...childrenIds.map((id) => nodeMap.get(id)._tmpY),
         );
@@ -125,7 +117,36 @@ const applyCousinGaps = (
     });
   }
 
-  // 5. Inject the balanced coordinates back into Dagre's memory
+  // Anti-Collision Sweeper
+  levels.forEach((levelNodeIds) => {
+    levelNodeIds.sort((a, b) => nodeMap.get(a)._tmpY - nodeMap.get(b)._tmpY);
+
+    for (let i = 1; i < levelNodeIds.length; i++) {
+      const prevId = levelNodeIds[i - 1];
+      const currId = levelNodeIds[i];
+
+      const prevNode = nodesInTree.find((n) => n.id === prevId);
+      const currNode = nodesInTree.find((n) => n.id === currId);
+
+      const prevHeight = prevNode.measured?.height ?? fallbackHeight;
+      const currHeight = currNode.measured?.height ?? fallbackHeight;
+
+      const minRequiredY =
+        nodeMap.get(prevId)._tmpY + prevHeight / 2 + currHeight / 2 + 16;
+
+      if (nodeMap.get(currId)._tmpY < minRequiredY) {
+        const overlapAmount = minRequiredY - nodeMap.get(currId)._tmpY;
+        const shiftDescendants = (nodeId) => {
+          nodeMap.get(nodeId)._tmpY += overlapAmount;
+          childrenMap
+            .get(nodeId)
+            .forEach((childId) => shiftDescendants(childId));
+        };
+        shiftDescendants(currId);
+      }
+    }
+  });
+
   nodesInTree.forEach((n) => {
     dagreGraph.node(n.id).y = nodeMap.get(n.id)._tmpY;
   });
@@ -151,9 +172,8 @@ export const getLayoutedElements = (currentNodes, currentEdges) => {
   );
 
   const ranksep = 90;
-  const nodesep = 12; // Keep siblings extremely tight
+  const nodesep = 12;
 
-  // --- LEFT TREE LAYOUT ---
   const dagreLeft = new dagre.graphlib.Graph();
   dagreLeft.setDefaultEdgeLabel(() => ({}));
   dagreLeft.setGraph({ rankdir: "RL", ranksep, nodesep });
@@ -169,11 +189,8 @@ export const getLayoutedElements = (currentNodes, currentEdges) => {
     .forEach((e) => dagreLeft.setEdge(e.source, e.target));
 
   dagre.layout(dagreLeft);
-
-  // Intercept and Balance Left Tree
   applyCousinGaps(dagreLeft, leftNodes, visibleEdges, 40);
 
-  // --- RIGHT TREE LAYOUT ---
   const dagreRight = new dagre.graphlib.Graph();
   dagreRight.setDefaultEdgeLabel(() => ({}));
   dagreRight.setGraph({ rankdir: "LR", ranksep, nodesep });
@@ -189,11 +206,8 @@ export const getLayoutedElements = (currentNodes, currentEdges) => {
     .forEach((e) => dagreRight.setEdge(e.source, e.target));
 
   dagre.layout(dagreRight);
-
-  // Intercept and Balance Right Tree
   applyCousinGaps(dagreRight, rightNodes, visibleEdges, 40);
 
-  // --- FINAL ZEROING OUT ---
   const leftRootPos = dagreLeft.node("root");
   const rightRootPos = dagreRight.node("root");
 
