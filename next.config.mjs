@@ -1,7 +1,11 @@
-/** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
-  reactCompiler: true,
+  output: "export",
+  trailingSlash: false,
+  skipTrailingSlashRedirect: false,
+  distDir: "dist",
+  images: {
+    unoptimized: true,
+  },
 };
 
 export default nextConfig;
